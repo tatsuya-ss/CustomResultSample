@@ -2,6 +2,8 @@ package com.example.customresultsample
 
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import com.google.gson.annotations.SerializedName
+import com.jakewharton.retrofit2.adapter.kotlin.coroutines.CoroutineCallAdapterFactory
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -11,12 +13,25 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import java.io.Serializable
+import java.lang.Exception
 
 class GitHubModel(val name: String)
-data class GitHubEntity(val name: String)
+
+data class GitHubEntity(
+        @SerializedName("name")
+        val name: String
+        )
+
 interface GitHubClient{
     @GET("users/tatsuya-ss")
-    fun fetchUser(): retrofit2.Call<GitHubEntity>
+    suspend fun fetchUser(): GitHubEntity
+}
+
+sealed class Result<out R> {
+    // outをつけると、Tは戻り値の型としてしか使わない
+    data class Success<out T>(val data: T): Result<T>()
+    data class Failure(val exception: Exception): Result<Nothing>()
 }
 
 class MainActivity : AppCompatActivity() {
@@ -28,7 +43,11 @@ class MainActivity : AppCompatActivity() {
         GlobalScope.launch {
             println("開始")
             launch {
-                fetchGitHubUser()
+                val result = fetchGitHubUser()
+                when(result) {
+                    is Result.Success -> { println(result.data.name) }
+                    is Result.Failure -> { println(result.exception.message) }
+                }
             }
         }
 
@@ -49,23 +68,22 @@ class MainActivity : AppCompatActivity() {
         val retrofit = Retrofit.Builder()
                 .baseUrl("https://api.github.com/")
                 .addConverterFactory(GsonConverterFactory.create())
+                .addCallAdapterFactory(CoroutineCallAdapterFactory())
                 .client(client)
                 .build()
         val githubClient = retrofit.create(GitHubClient::class.java)
         return githubClient
     }
 
-    private fun fetchGitHubUser() {
-        createService().fetchUser().enqueue(object : Callback<GitHubEntity> {
-            override fun onResponse(call: Call<GitHubEntity>, response: Response<GitHubEntity>) {
-                println(response.body().toString())
-            }
-
-            override fun onFailure(call: Call<GitHubEntity>, t: Throwable) {
-                println(t.message)
-            }
-
-        })
+    private suspend fun fetchGitHubUser(): Result<GitHubEntity> {
+        println("fetchGitHubUser")
+        return try {
+            val result = createService().fetchUser()
+            Result.Success(result)
+        } catch (e: Exception) {
+            println(e.message)
+            Result.Failure(e)
+        }
     }
 
 }
